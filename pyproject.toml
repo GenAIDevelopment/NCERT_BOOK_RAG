@@ -1,0 +1,42 @@
+[project]
+name = "ncert-book-rag"
+version = "1.0.0"
+description = "Multimodal RAG over NCERT textbooks: image-aware indexing, teacher-persona Q&A, DeepEval evaluation. Gemini-powered."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # PDF extraction
+    "pymupdf>=1.24.0",
+    "pytesseract>=0.3.10",       # needs the `tesseract` system binary installed
+    "pillow>=10.0.0",
+    "opencv-python-headless>=4.9.0",  # QR-code detection
+    # LangChain core + splitters + indexing
+    "langchain>=1.0.0",
+    "langchain-core>=1.0.0",
+    "langchain-text-splitters>=0.3.0",
+    "langchain-community>=0.3.0",     # SQLRecordManager (being sunset; pinned here for now)
+    # Vector store
+    "langchain-chroma>=0.2.0",
+    "chromadb>=0.5.0",
+    # Google Gemini (chat, vision, embeddings) - consolidated google-genai SDK
+    "langchain-google-genai>=2.0.0",
+    # UI
+    "streamlit>=1.36.0",
+    # Evaluation
+    "deepeval>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+ncert-ingest = "ncert_rag.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ncert_rag"]

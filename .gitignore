@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Generated pipeline artefacts (keep source PDFs, ignore everything derived)
+data/standard/**/extracted_text/
+data/standard/**/extracted_images/
+data/standard/**/chunks/
+data/standard/**/captions/
+data/standard/**/captioned_chunks/
+data/standard/**/vectorstore/
+data/standard/**/record_manager.sqlite
+
+# DeepEval
+.deepeval/
+.deepeval_cache.json

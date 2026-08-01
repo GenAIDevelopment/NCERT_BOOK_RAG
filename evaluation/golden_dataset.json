@@ -1,0 +1,34 @@
+[
+  {
+    "input": "Why is one lakh considered a large number?",
+    "expected_output": "One lakh (1,00,000) is large because it is ten times ten thousand; experiencing that many of something, like tasting a lakh varieties of rice one per day, would take far longer than a single lifetime."
+  },
+  {
+    "input": "What is the largest 3-digit number and what number comes right after it?",
+    "expected_output": "The largest 3-digit number is 999; adding 1 gives 1000, which is the smallest 4-digit number."
+  },
+  {
+    "input": "How do you read the number 15,75,000 in the Indian place value system?",
+    "expected_output": "Fifteen lakh seventy-five thousand."
+  },
+  {
+    "input": "In the Indian number system, how many zeros does one crore have?",
+    "expected_output": "One crore is written as 1,00,00,000, which has seven zeros."
+  },
+  {
+    "input": "What is the difference between an exact value and an approximate value?",
+    "expected_output": "An exact value is the precise count or measurement, while an approximate value is a rounded or estimated figure used when the exact number is not needed or not known."
+  },
+  {
+    "input": "What is a tenth in decimals?",
+    "expected_output": "A tenth is one part when a whole is divided into ten equal parts, written as 0.1 in decimal form."
+  },
+  {
+    "input": "How is a letter-number (variable) used in an expression?",
+    "expected_output": "A letter-number stands for a value that can change; it lets us write a general expression, like 365 x y for the number of days in y years, that works for any value of the letter."
+  },
+  {
+    "input": "What makes a number even?",
+    "expected_output": "A number is even if it can be arranged in pairs with no leftover; adding any number of even numbers always gives an even result."
+  }
+]
