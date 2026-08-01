@@ -94,6 +94,55 @@ def get_record_manager(book: BookRef):
     return rm
 
 
+def _check_embedding_dimension(book, vectorstore, embeddings, documents) -> None:
+    """Fail early and clearly if the existing collection's vector dimension
+    doesn't match the current embedding model's.
+
+    A Chroma collection fixes its dimensionality at creation. If a collection
+    was built with a different embedding model (e.g. a stub with tiny vectors,
+    or a previous embedding model with a different size), upserting real
+    vectors fails deep inside Chroma with a cryptic message. We detect the
+    mismatch here and tell the user exactly how to fix it: delete the stale
+    vector store + record manager and re-index."""
+    if not documents:
+        return
+    try:
+        existing = vectorstore._collection.count()
+    except Exception:
+        return
+    if existing == 0:
+        return  # fresh collection, nothing to conflict with
+
+    try:
+        emb = embeddings or llm.get_embeddings()
+        current_dim = len(emb.embed_query(documents[0].page_content[:200]))
+        # peek at one stored embedding's dimension. Chroma returns embeddings
+        # as a numpy array, so check length explicitly rather than truthiness
+        # (bool() on a numpy array is ambiguous and raises).
+        peek = vectorstore._collection.get(limit=1, include=["embeddings"])
+        stored = peek.get("embeddings")
+        if stored is not None and len(stored) > 0:
+            stored_dim = len(stored[0])
+            if stored_dim != current_dim:
+                from . import paths
+                raise RuntimeError(
+                    f"Embedding dimension mismatch for {book}: the existing "
+                    f"vector store holds {stored_dim}-dim vectors but the "
+                    f"current model produces {current_dim}-dim vectors. This "
+                    f"usually means the collection was built with a different "
+                    f"embedding model (or a test stub). Delete the stale store "
+                    f"and record manager, then re-index:\n"
+                    f"    rm -rf {paths.vectorstore_dir(book)}\n"
+                    f"    rm -f  {paths.record_manager_db(book)}"
+                )
+    except RuntimeError:
+        raise
+    except Exception:
+        # if the introspection itself fails, don't block indexing; let the real
+        # index() call surface any genuine error
+        return
+
+
 def build_index(
     book: BookRef,
     embeddings=None,
@@ -122,6 +171,8 @@ def build_index(
         progress(0.3, "Opening vector store and record manager")
     vectorstore = get_vectorstore(book, embeddings=embeddings)
     record_manager = get_record_manager(book)
+
+    _check_embedding_dimension(book, vectorstore, embeddings, documents)
 
     if progress:
         progress(0.5, f"Indexing {len(documents)} chunks (cleanup={cleanup})")

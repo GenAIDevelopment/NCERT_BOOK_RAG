@@ -19,18 +19,24 @@ import base64
 import json
 import os
 
+from . import config
 from .config import BookRef
 from . import paths
 from . import llm
 
 CAPTION_PROMPT = (
     "This is a figure from a Class {standard} NCERT {subject} textbook. "
-    "Describe what it shows in one sentence, focused on the content that a "
-    "student would need (e.g. 'bar graph comparing rice varieties in 1970 vs "
-    "today', 'number line showing addition of negative integers', 'flowchart "
-    "of the steps from the largest 3-digit number up to one lakh'). If the "
-    "image is a plain decorative colour block with no informational content, "
-    "reply exactly with: DECORATIVE. No preamble."
+    "Describe what it shows in one or two sentences focused on the content a "
+    "student would need. IMPORTANT: if the figure contains any numbers, labels, "
+    "equations, or short text (e.g. values inside boxes, numbers on a number "
+    "line, answers in a diagram), transcribe those exact values in your "
+    "description -- in a maths book the figure often contains the actual answer "
+    "(for example a box diagram might show '999', '+1', '1,000'). "
+    "Example good caption: 'A number progression diagram showing the largest "
+    "3-digit number 999, then +1 giving the smallest 4-digit number 1,000, "
+    "continuing up to 1,00,000 (one lakh).' "
+    "If the image is a plain decorative colour block with no informational "
+    "content, reply exactly with: DECORATIVE. No preamble."
 )
 
 
@@ -89,17 +95,33 @@ def caption_book(
             chunks = json.load(f)
 
         all_images = sorted({img for c in chunks for img in c["image_paths"]})
+        # only images not already cached, capped by limit if set
+        pending = [img for img in all_images if img not in cache]
+        if limit is not None:
+            pending = pending[:limit]
+
+        # Caption in parallel: these are I/O-bound API calls, so a thread pool
+        # gives a large speedup over a sequential loop (which made a heavy
+        # chapter like the decimals chapter, ~90 images, look frozen). Results
+        # are collected then written once; per-image failures are isolated so
+        # one bad image never halts the chapter.
         new_count = 0
-        for img_path in all_images:
-            if img_path in cache:
-                continue
-            if limit is not None and new_count >= limit:
-                break
-            try:
-                cache[img_path] = caption_image(model, img_path, book.standard, book.subject)
-                new_count += 1
-            except Exception as e:  # keep going; a single bad image shouldn't halt a book
-                print(f"  ! failed to caption {img_path}: {e}")
+        if pending:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            def _caption_one(path):
+                return path, caption_image(model, path, book.standard, book.subject)
+
+            with ThreadPoolExecutor(max_workers=config.CAPTION_CONCURRENCY) as pool:
+                futures = {pool.submit(_caption_one, p): p for p in pending}
+                for fut in as_completed(futures):
+                    path = futures[fut]
+                    try:
+                        _, caption = fut.result()
+                        cache[path] = caption
+                        new_count += 1
+                    except Exception as e:  # one bad image shouldn't halt a book
+                        print(f"  ! failed to caption {path}: {e}")
 
         with open(cache_path, "w") as f:
             json.dump(cache, f, indent=2)

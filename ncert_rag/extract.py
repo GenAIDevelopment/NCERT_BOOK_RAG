@@ -146,6 +146,54 @@ def extract_vector_figure(page, chapter: str, page_index: int, image_out_dir: st
 # --------------------------------------------------------------------------- #
 # Per-PDF and per-book extraction
 # --------------------------------------------------------------------------- #
+def _strip_boilerplate_line(line: str) -> bool:
+    """True if a single line is boilerplate that should be dropped."""
+    import re
+    s = line.strip()
+    if not s:
+        return False
+    if s in config.BOILERPLATE_EXACT:
+        return True
+    for pat in config.BOILERPLATE_PATTERNS:
+        if re.match(pat, s):
+            return True
+    return False
+
+
+def _detect_running_headers(pages_text: list[str], min_fraction: float = 0.5) -> set[str]:
+    """Find lines that repeat across a large fraction of a chapter's pages --
+    these are running headers/footers (e.g. the chapter-title header at the
+    top of most pages), which vary per chapter and so can't be hardcoded.
+
+    Conservative on purpose: only lines longer than 8 characters that appear on
+    at least half the pages qualify. This avoids stripping short content
+    fragments that legitimately recur (a value like '999', a label repeated
+    across worked examples, a heading), which an earlier, looser version could
+    have removed -- costing retrieval recall on figure-adjacent content."""
+    from collections import Counter
+
+    counts: Counter = Counter()
+    for text in pages_text:
+        seen_on_page = {ln.strip() for ln in text.split("\n") if len(ln.strip()) > 8}
+        for ln in seen_on_page:
+            counts[ln] += 1
+
+    threshold = max(4, int(len(pages_text) * min_fraction))
+    return {ln for ln, c in counts.items() if c >= threshold}
+
+
+def _clean_page_text(text: str, running_headers: set[str]) -> str:
+    """Drop boilerplate lines (fixed patterns + detected running headers)."""
+    kept = []
+    for line in text.split("\n"):
+        if _strip_boilerplate_line(line):
+            continue
+        if line.strip() in running_headers:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def extract_pdf(pdf_path: str, image_out_dir: str, enable_ocr: bool = True) -> list[ExtractedPage]:
     """Extract every page of one chapter PDF."""
     chapter = os.path.splitext(os.path.basename(pdf_path))[0]
@@ -189,6 +237,17 @@ def extract_pdf(pdf_path: str, image_out_dir: str, enable_ocr: bool = True) -> l
         pages.append(ExtractedPage(chapter=chapter, page_number=i, text=text, image_paths=kept_images))
 
     doc.close()
+
+    # Two-pass boilerplate removal: now that we have every page's text, detect
+    # running headers/footers that repeat across the chapter and strip them
+    # (plus the fixed publication-footer/page-number patterns) from each page.
+    # This removes the "Reprint 2026-27", running chapter-title header, and
+    # bare-page-number noise that was diluting Contextual Relevancy without
+    # touching real content.
+    running_headers = _detect_running_headers([p.text for p in pages])
+    for p in pages:
+        p.text = _clean_page_text(p.text, running_headers)
+
     return pages
 
 

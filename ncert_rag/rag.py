@@ -27,14 +27,18 @@ examples before formal statements.
 Rules:
 - Answer ONLY using the provided context from the textbook. Do not add facts \
 from outside it.
+- Do NOT volunteer extra rules, notation conventions, or details the context \
+does not state (e.g. exactly where commas fall in a number). If you are \
+tempted to explain a convention the context doesn't spell out, either quote \
+what the context does say or leave it out -- a confident wrong detail is worse \
+than a shorter correct answer.
 - If the context does not contain the answer, say so plainly and suggest which \
 section or chapter the student might look at instead. Never invent an answer.
 - When the context includes a figure description, refer to it naturally \
 ("as the diagram shows...") so the student knows to look at it.
 - Be encouraging. If a question reveals a misunderstanding, gently correct it.
 - Keep explanations focused; don't pad. End with a short check-for-understanding \
-question when it would help the student learn.
-"""
+question when it would help the student learn."""
 
 TEACHER_USER_PROMPT = """Context from the textbook:
 {context}
@@ -77,11 +81,43 @@ class TeacherRAG:
     """A reusable RAG interface for one book. Construct once, query many times."""
 
     def __init__(self, book: BookRef, chat_model=None, embeddings=None, k: int = RETRIEVER_K):
+        from .config import (
+            RETRIEVER_SCORE_THRESHOLD,
+            USE_RERANKER,
+            RERANKER_MODEL,
+            RERANK_FETCH_K,
+        )
+
         self.book = book
         self.k = k
         self._chat = chat_model or llm.get_chat_model()
         self._vectorstore = index_module.get_vectorstore(book, embeddings=embeddings)
-        self._retriever = self._vectorstore.as_retriever(search_kwargs={"k": k})
+
+        if USE_RERANKER:
+            # Two-stage: fetch a wide net via embeddings, then a cross-encoder
+            # reranks (query, chunk) pairs and keeps the top k. This is what
+            # most directly lifts Contextual Relevancy/Precision -- the chunks
+            # that survive are the most on-topic, not just the nearest in
+            # embedding space. Imports are local so the reranker deps are only
+            # needed when the feature is turned on.
+            from langchain.retrievers import ContextualCompressionRetriever
+            from langchain.retrievers.document_compressors import CrossEncoderReranker
+            from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+
+            base = self._vectorstore.as_retriever(search_kwargs={"k": RERANK_FETCH_K})
+            cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL)
+            compressor = CrossEncoderReranker(model=cross_encoder, top_n=k)
+            self._retriever = ContextualCompressionRetriever(
+                base_compressor=compressor, base_retriever=base
+            )
+        elif RETRIEVER_SCORE_THRESHOLD > 0:
+            # Drop marginally-relevant chunks before they reach the LLM context.
+            self._retriever = self._vectorstore.as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={"k": k, "score_threshold": RETRIEVER_SCORE_THRESHOLD},
+            )
+        else:
+            self._retriever = self._vectorstore.as_retriever(search_kwargs={"k": k})
 
     def answer(self, question: str) -> RAGAnswer:
         from langchain_core.messages import SystemMessage, HumanMessage
