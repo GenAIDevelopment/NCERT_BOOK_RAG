@@ -12,4 +12,8 @@
 
 * Create a RAG with a prompt where the RAG acts as teacher and explains the concepts to student
 * The UI will be from streamlit
+
+## Evaluation
+
+* Use DeepEval to measure the RAG efficiency
   
